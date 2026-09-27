@@ -72,15 +72,16 @@ declare global {
   } & {
     
     [K in 'isCls' | 'inCls']: {
-      (i: unknown, num:    BooleanConstructor):  i is boolean,
-      (i: unknown, num:    NumberConstructor):   i is number,
-      (i: unknown, str:    StringConstructor):   i is string,
-      (i: unknown, buff:   Buffer):              i is Buffer,
-      (i: unknown, arr:    ArrayConstructor):    i is any[],
-      (i: unknown, obj:    ObjectConstructor):   i is Obj<unknown>,
+      (i: unknown, num:    BooleanConstructor ): i is boolean,
+      (i: unknown, num:    NumberConstructor  ): i is number,
+      (i: unknown, str:    StringConstructor  ): i is string,
+      (i: unknown, buff:   Buffer             ): i is Buffer,
+      (i: unknown, arr:    ArrayConstructor   ): i is any[],
+      (i: unknown, obj:    ObjectConstructor  ): i is Obj<unknown>,
       (i: unknown, fn:     FunctionConstructor): i is (...args: any[]) => any,
-      (i: unknown, fn:     SymbolConstructor):   i is symbol,
-      <T>(i: unknown, prm: PromiseConstructor):  i is Promise<T>,
+      (i: unknown, fn:     SymbolConstructor  ): i is symbol,
+      (i: unknown, fn:     DateConstructor    ): i is Date,
+      <T>(i: unknown, prm: PromiseConstructor ): i is Promise<T>,
       <C extends abstract new (...args: any) => any>(i: unknown, cls: C): i is InstanceType<C>
     }
     
@@ -156,11 +157,16 @@ declare global {
   type ObjIterator<O extends Obj> = Iterable<[ string, O[keyof O] ]>;
   
   // Loopable
-  type Loopable0<T> = T[] | Set<T> | (T extends [infer K, infer V] ? Map<K, V> : never) | Generator<T> | AsyncGenerator<T>;
+  type Loopable0<T> = T[] | Set<T> | Generator<T> | AsyncGenerator<T>;
+  // TODO: this is more a step in the right direction; Iterable/AsyncIterable are exactly what we
+  // want; just need to declare the loopables define common clearing-loopable methods...
+  // type Loopable0<T> = (Iterable<T> | AsyncIterable<T>) & {
+  //   [clearing.toArr]: <V>(fn: (inp: T) => V) => V[] | Promise<V[]>
+  // };
   type Loopable<T> = Loopable0<T> | Promise<Loopable0<T>>;
   
   // Synonyms
-  type Json = null | boolean | number | string | Json[] | { [K: string]: Json };
+  type Json = undefined | null | boolean | number | string | Json[] | { [K: string]: Json };
   type Skip = undefined;
   type SkipNever<V> = V extends Skip ? Skip extends V ? never : V : V;
   
@@ -291,7 +297,7 @@ declare global {
     [clearing.count]: () => number,
     [clearing.empty]: () => boolean,
     [clearing.toObj]: <R extends readonly [string, any]>(fn: (v: T, n: number) => Skip | R) => { [K in R[0]]: R[1] },
-    [clearing.find]:  (fn: (val: T, n: number) => any) => ({ found: true, val: T, ind: number } | { found: false, val: null, ind: null }),
+    [clearing.find]:  (fn: (val: T, n: number) => any) => Skip | T,
     [clearing.group]: <G extends string>(fn: (v: T, i: number) => Skip | G) => { [K in G]?: T[] }
   }
   interface Array<T> extends ArrayProto<T> {}
@@ -340,25 +346,24 @@ declare global {
   
   interface ArrayBufferConstructor {}
   interface ArrayBuffer {
-    [clearing.toStr]: () => string,
+    [clearing.toStr]: (t?: 'utf8' | 'base64') => string,
     [clearing.toNum]: () => bigint
   }
   interface SharedArrayBuffer {
-    [clearing.toStr]: () => string,
+    [clearing.toStr]: (t?: 'utf8' | 'base64') => string,
     [clearing.toNum]: () => bigint
   }
   
   interface Uint8ArrayConstructor {}
   interface Uint8Array {
-    [clearing.toStr]: () => string,
+    [clearing.toStr]: (t?: 'utf8' | 'base64') => string,
     [clearing.toNum]: () => bigint
   }
   
   interface PromiseConstructor {
-    [clearing.allArr]: <V>(arr: Arr<Promise<Skip | V>>) => Promise<Arr<V>>,
-    [clearing.allObj]: <V>(obj: Obj<Promise<Skip | V>>) => Promise<Obj<V>>,
-    
-    [clearing.later]: <T=void>() => PromiseLater<T>
+    [clearing.allArr]: <V>(arr: Arr<Promise<Skip | V> | Skip | V>) => Promise<Arr<Awaited<V>>>,
+    [clearing.allObj]: <V>(obj: Obj<Promise<Skip | V> | Skip | V>) => Promise<Obj<Awaited<V>>>,
+    [clearing.later]: <V=void>() => PromiseLater<V>
   }
   interface Promise<T> {
     
@@ -379,7 +384,7 @@ declare global {
   interface Set<T> extends SymbolsProto {
     [clearing.count]: () => number,
     [clearing.empty]: () => boolean,
-    [clearing.find]: (fn: (val: T) => any) => ({ found: true, val: T } | { found: false, val: null }),
+    [clearing.find]: (fn: (val: T) => any) => Skip | T,
     [clearing.map]: <V>(fn: (val: T, ind: number) => V) => Exclude<V, Skip>[],
     [clearing.toArr]: <V>(fn: (val: T, ind: number) => V) => Exclude<V, Skip>[],
     [clearing.toObj]: <R extends readonly [string, any]>(fn: (val: T) => Skip | R) => Obj<R[1]>,
@@ -391,7 +396,7 @@ declare global {
     [clearing.add]:           (k: K, v: V)                                            => void,
     [clearing.count]:         (this: Map<K, V>)                                       => number,
     [clearing.empty]:         ()                                                      => this is Map<K, never>,
-    [clearing.find]:          (fn: (val: V, key: K) => any)                           => ({ found: true, val: V, key: K } | { found: false, val: null, key: null }),
+    [clearing.find]:          (fn: (val: V, key: K) => any)                           => Skip | { val: V, key: K },
     [clearing.map]:   <T>     (fn: (val: V, key: K) => Skip | readonly [string, any]) => { [K: string]: any },
     [clearing.toArr]: <T>     (fn: (val: V, key: K) => T)                             => Exclude<T, Skip>[],
     [clearing.toObj]: <RK, RV>(fn: (val: V, key: K) => Skip | readonly [ RK, RV ])    => { [K in RK]: RV },
@@ -415,7 +420,7 @@ declare global {
     [clearing.padTail]: (n: number, s?: string) => string,
     [clearing.toStr]: () => this,
     [clearing.toNum]: (chrs: string | CharSet) => bigint,
-    [clearing.toBin]: () => Uint8Array,
+    [clearing.toBin]: (t?: 'utf8' | 'base64') => Uint8Array,
     [clearing.hasHead]: <H extends string>(this: string, head: H) => this is `${H}${string}`,
     [clearing.hasTail]: <T extends string>(this: string, tail: T) => this is `${string}${T}`,
     [clearing.upper]: <S extends string>(this: S) => Uppercase<S>,
@@ -434,10 +439,16 @@ declare global {
   }
   
   interface Generator<T = unknown, TReturn = any, TNext = any> {
-    [clearing.toArr]: <RR>(fn: (v: T) => Skip | RR) => RR[]
+    [clearing.toArr]: <R>(fn: (v: T) => Skip | R) => R[]
+    [clearing.find]:     (fn: (v: T) => boolean)  => Skip | T
   }
   interface AsyncGenerator<T = unknown, TReturn = any, TNext = any> {
-    [clearing.toArr]: <RR>(fn: (v: T) => Skip | RR) => Promise<RR[]>
+    [clearing.toArr]: <R>(fn: (v: T) => Skip | R) => Promise<R[]>
+    [clearing.find]:     (fn: (v: T) => boolean)  => Promise<Skip | T>
+  }
+  
+  interface JSON {
+    parse(content: Buffer): any; // Consider: this is nodejs-specific
   }
   
 }

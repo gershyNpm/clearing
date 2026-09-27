@@ -57,7 +57,6 @@ const applyClearing = (() => {
     
   };
   
-  
   const symNames = [
     // <SYMBOLS> :: runtimeNames :: /[']([a-zA-Z0-9]+)[']/
     'add',
@@ -118,11 +117,10 @@ const applyClearing = (() => {
     clearing: cl,
     
     // This couples clearing to bundlers, but it's probably worth it. @gershy code is run with tsx;
-    // tsx may insert a `__name` transform, which is used to keep functions associated with the
-    // name they had in source code. Without any adaptation, this means that no function can safely
-    // be considered sovereign when run with tsx. Having a global definition for `__name` solves
-    // this anywhere jsfn is used. Note this is intentionally invisible to the consumer; there is
-    // no typing declared for __name.
+    // tsx may insert a `__name` transform to keep functions associated with the name they had in
+    // source code. Without any adaptation no function can safely be considered sovereign when run
+    // with tsx. Having a global definition for `__name` solves this anywhere jsfn is used. Note
+    // this is intentionally invisible to the consumer; there is no typing declared for __name.
     __name: (fn, value) => Object.defineProperty(fn, 'name', { value, configurable: true })
   });
   
@@ -276,13 +274,13 @@ const applyClearing = (() => {
   assignSyms(Array, {});
   assignSyms(Array.prototype, {
     
-    [add](...args) { this.push(...args); return args[0]; },
+    [add](...inp) { this.push(...inp); return inp[0]; },
     [count]() { return this.length; },
     [empty]() { return !this.length; },
-    [find](f) { // Iterator: (val, ind) => bool; returns { found=false, val=null, ind=null }
+    [find](f) {
       const n = this.length;
-      for (let i = 0; i < n; i++) if (f(this[i], i)) return { found: true, val: this[i], ind: i };
-      return { found: false, val: null, ind: null };
+      for (let i = 0; i < n; i++) if (f(this[i], i)) return this[i];
+      return skip;
     },
     [group](fn) { // Iterator: val => '<categoryTerm>'
       
@@ -376,19 +374,22 @@ const applyClearing = (() => {
     [has]:     String.prototype.includes,
     [hasHead]: String.prototype.startsWith,
     [hasTail]: String.prototype.endsWith,
-    [indent](...args /* amt=2, char=' ' | indentStr=' '.repeat(2) */) {
+    [indent](...inp /* amt=2, char=' ' | indentStr=' '.repeat(2) */) {
       
       if (!this) return this; // No-op on empty String (otherwise it would transform a 0-line string to a 1-line string)
       let indentStr: string;
-      if (isCls(args[0], String)) { indentStr = args[0]; }
-      else                        { const [ amt=2, char=' ' ] = args; indentStr = char.repeat(amt); }
+      if (isCls(inp[0], String)) { indentStr = inp[0]; }
+      else                        { const [ amt=2, char=' ' ] = inp; indentStr = char.repeat(amt); }
       return this.split('\n')[map](ln => `${indentStr}${ln}`).join('\n');
       
     },
     [lower]:   String.prototype.toLowerCase,
     [padHead]: String.prototype.padStart,
     [padTail]: String.prototype.padEnd,
-    [toBin]() { return enc.encode(this); },
+    [toBin](this: string, t: 'utf8' | 'base64' = 'utf8') {
+      if (t === 'utf8') return enc.encode(this);
+      throw Error('script missing'); // ZZZ
+    },
     [toStr]() { return this; },
     [toNum](cs: string | CharSet=String[base62]) {
       
@@ -464,19 +465,27 @@ const applyClearing = (() => {
   
   assignSyms(ArrayBuffer, {});
   assignSyms(ArrayBuffer.prototype, {
-    [toStr]() { return dec.decode(this); },
-    [toNum]() { return (new Uint8Array(this))[toNum](); }
+    [toStr](this: ArrayBuffer, t: 'utf8' | 'base64' = 'utf8') {
+      if (t === 'utf8') return dec.decode(this);
+      throw Error('script missing'); // ZZZ
+    },
+    [toNum](this: ArrayBuffer) { return (new Uint8Array(this))[toNum](); }
   });
   assignSyms(SharedArrayBuffer, {});
   assignSyms(SharedArrayBuffer.prototype, {
-    [toStr]() { return dec.decode(new Uint8Array(this as SharedArrayBuffer)); },
-    [toNum]() { return (new Uint8Array(this))[toNum](); }
+    [toStr](this: SharedArrayBuffer, t: 'utf8' | 'base64' = 'utf8') {
+      if (t === 'utf8') return dec.decode(new Uint8Array(this));
+      throw Error('script missing'); // ZZZ
+    },
+    [toNum](this: SharedArrayBuffer) { return (new Uint8Array(this))[toNum](); }
   });
-  
   assignSyms(Uint8Array, {});
   assignSyms(Uint8Array.prototype, {
-    [toStr]() { return dec.decode(this as Uint8Array); },
-    [toNum]() {
+    [toStr](this: Uint8Array, t: 'utf8' | 'base64' = 'utf8') {
+      if (t === 'utf8') return dec.decode(this);
+      throw Error('script missing'); // ZZZ
+    },
+    [toNum](this: Uint8Array) {
       
       const base = 256n;
       
@@ -494,14 +503,12 @@ const applyClearing = (() => {
   
   assignSyms(Error, {
     
-    [assert]: (args: any, fn: (args: any) => boolean) => {
-      if (fn(args)) return;
+    [assert]: (inp: any, fn: (inp: any) => boolean) => {
+      if (fn(inp)) return;
       
       throw Error('assert failed')[mod]({
-        fn: `false === (${
-          fn.toString().replace(/[\s]+/, ' ')
-        })(args)`,
-        args
+        fn: `false === (${ fn.toString().replace(/[\s]+/, ' ') })(inp)`,
+        inp
       });
     }
     
@@ -513,7 +520,7 @@ const applyClearing = (() => {
       if (seen.has(this)) return seen.get(this);
       seen.set(this, 'cycle(Error)');
       
-      const { message, stack, cause, ...props } = this as Error & { cause?: Error };
+      const { message, stack, cause, ...props } = this as (Error & { cause?: Error });
       return {
         form: getClsName(this),
         msg: message,
@@ -578,7 +585,7 @@ const applyClearing = (() => {
     
   });
   assignSyms(Promise.prototype, {
-    async [toArr](this: Promise<Iterable<any> | AsyncIterable<any>>, fn: (v: any) => any) {
+    async [toArr](this: Promise<Loopable<any>>, fn: (v: any) => any) {
       const r: any[] = [];
       for await (const v of await this) {
         const vv = fn(v);
@@ -593,9 +600,9 @@ const applyClearing = (() => {
     
     [count](this: Set<any>) { return this.size; },
     [empty](this: Set<any>) { return !this.size; },
-    [find](this: Set<any>, fn) { // Iterator: (val) => bool; returns { found, val }
-      for (const val of this) if (fn(val)) return { found: true, val };
-      return { found: false, val: null };
+    [find](this: Set<any>, fn) {
+      for (const val of this) if (fn(val)) return val;
+      return skip;
     },
     [map](this: Set<any>, fn) { // Iterator: (val, ind) => val0
       const ret: any[] = [];
@@ -624,9 +631,9 @@ const applyClearing = (() => {
     [add]: Map.prototype.set,
     [count](this: Map<any, any>) { return this.size; },
     [empty](this: Map<any, any>) { return !this.size; },
-    [find](this: Map<any, any>, fn) { // Iterator: (val, key) => bool; returns { found, val, key }
-      for (const [ k, v ] of this) if (fn(v, k)) return { found: true, val: v, key: k };
-      return { found: false, val: null, key: null };
+    [find](this: Map<any, any>, fn) {
+      for (const [ k, v ] of this) if (fn(v, k)) return { val: v, key: k };
+      return skip;
     },
     [map](this: Map<any, any>, fn) { // Iterator: (val, key) => [ key0, val0 ]
       const ret: any = [];
@@ -657,6 +664,14 @@ const applyClearing = (() => {
         if (vv !== skip) r.push(vv);
       }
       return r;
+    },
+    [find](this: Generator, fn: (v: any) => boolean) {
+      while (true) {
+        const next = this.next();
+        if (next.done) break;
+        if (fn(next.value)) return next.value;
+      }
+      return skip;
     }
   });
   
@@ -667,6 +682,14 @@ const applyClearing = (() => {
       const r: any[] = [];
       for await (const v of this) { const vv = fn(v); if (vv !== skip) r.push(vv); }
       return r;
+    },
+    async [find](this: AsyncGenerator, fn: (v: any) => boolean) {
+      while (true) {
+        const next = await this.next();
+        if (next.done) break;
+        if (fn(next.value)) return next.value;
+      }
+      return skip;
     }
   });
   

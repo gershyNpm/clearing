@@ -4,6 +4,8 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { testRunner, assertEqual } from '../build/utils.test.ts';
 
+const { skip } = cl;
+
 // <SYMBOLS> :: testDefs :: /const[ ]([a-zA-Z0-9]+)[:]/
 const add:       typeof cl.add       = cl.add;
 const allArr:    typeof cl.allArr    = cl.allArr;
@@ -146,15 +148,15 @@ const walk:      typeof cl.walk      = cl.walk;
       { [K: string]: string }
     >>,
     
-    // It should be possible to call `cl.toArr` on any loopable whether or not a Promise
+    // It should be possible to call `toArr` on any loopable whether or not a Promise
     18: Assert<Equal<
-      (Loopable<'XYZ'>)[typeof cl.toArr],
+      (Loopable<'XYZ'>)[typeof toArr],
       (fn: (v: 'XYZ', ...args: any[]) => any) => any
     >>,
     
-    // Promise resolving to non-loopable type does not support `cl.toArr`
+    // Promise resolving to non-loopable type does not support `toArr`
     19: Assert<Equal<
-      Promise<null>[typeof cl.toArr],
+      Promise<null>[typeof toArr],
       undefined
     >>
     
@@ -328,7 +330,7 @@ testRunner([
     assertEqual(
       // Here the `undefined` value in the head object is preserved, while the `skip` in the tail
       // object causes a property deletion
-      { a: 1, x: undefined, b: { c: 2 } }[merge]({ b: { d: 3, c: cl.skip }, e: 4 }),
+      { a: 1, x: undefined, b: { c: 2 } }[merge]({ b: { d: 3, c: skip }, e: 4 }),
       { a: 1, x: undefined, b: { d: 3 }, e: 4 }
     );
     
@@ -374,10 +376,10 @@ testRunner([
   { name: 'Array.prototype[find]', fn: async () => {
     const arr = [ 10, 20, 30 ];
     const result = arr[find](v => v > 15);
-    if (!result.found || result.val !== 20 || result.ind !== 1) throw Error('failed');
+    assertEqual(result, 20);
     
     const missing = arr[find](v => v > 100);
-    if (missing.found) throw Error('failed missing');
+    assertEqual(missing, skip);
   }},
   { name: 'Array.prototype[group]', fn: async () => {
     const arr = [ 1, 2, 3, 4, 5 ];
@@ -634,8 +636,7 @@ testRunner([
   }},
   { name: 'Set.prototype[find]', fn: async () => {
     const s = new Set([ 10, 20, 30 ]);
-    const result = s[find](v => v > 15);
-    if (!result.found || result.val !== 20) throw Error('failed');
+    assertEqual(s[find](v => v > 15), 20);
   }},
   { name: 'Set.prototype[map]', fn: async () => {
     const s = new Set([ 1, 2, 3 ]);
@@ -668,8 +669,7 @@ testRunner([
   }},
   { name: 'Map.prototype[find]', fn: async () => {
     const m = new Map([ [ 'a', 10 ], [ 'b', 20 ] ]);
-    const result = m[find](v => v > 15);
-    if (!result.found || result.val !== 20 || result.key !== 'b') throw Error('failed');
+    assertEqual(m[find](v => v > 15), { key: 'b', val: 20 });
   }},
   { name: 'Map.prototype[map]', fn: async () => {
     const m = new Map([ [ 'a', 1 ], [ 'b', 2 ] ]);
@@ -705,6 +705,18 @@ testRunner([
     assertEqual(vals, [ 'a', 'aa', 'aaa' ]);
     
   }},
+  { name: 'Generator.prototype[find]', fn: async () => {
+    
+    const genFn0 = function*() {
+      yield 1;
+      yield 2;
+      yield 3;
+    };
+    const genFn = function*(): Generator<number, any, any> { yield* genFn0(); }
+    assertEqual(genFn()[find](v => v > 1), 2);
+    assertEqual(genFn()[find](v => v > 5), skip);
+    
+  }},
   
   { name: 'AsyncGenerator.prototype[toArr]', fn: async () => {
     
@@ -723,6 +735,18 @@ testRunner([
     
     const vals = await genFn()[toArr](v => 'a'.repeat(v));
     assertEqual(vals, [ 'a', 'aa', 'aaa' ]);
+    
+  }},
+  { name: 'AsyncGenerator.prototype[find]', fn: async () => {
+    
+    const genFn0 = async function*() {
+      yield 1;
+      yield 2;
+      yield 3;
+    };
+    const genFn = async function*(): AsyncGenerator<number, any, any> { yield* genFn0(); }
+    assertEqual(await genFn()[find](v => v > 1), 2);
+    assertEqual(await genFn()[find](v => v > 5), skip);
     
   }},
   
