@@ -157,12 +157,12 @@ declare global {
   type ObjIterator<O extends Obj> = Iterable<[ string, O[keyof O] ]>;
   
   // Loopable
-  type Loopable0<T> = T[] | Set<T> | Generator<T> | AsyncGenerator<T>;
   // TODO: this is more a step in the right direction; Iterable/AsyncIterable are exactly what we
   // want; just need to declare the loopables define common clearing-loopable methods...
   // type Loopable0<T> = (Iterable<T> | AsyncIterable<T>) & {
   //   [clearing.toArr]: <V>(fn: (inp: T) => V) => V[] | Promise<V[]>
   // };
+  type Loopable0<T> = T[] | Set<T> | Generator<T> | AsyncGenerator<T>;
   type Loopable<T> = Loopable0<T> | Promise<Loopable0<T>>;
   
   // Synonyms
